@@ -20,6 +20,7 @@ const C = {
   SAPPHIRE:"38;2;128;205;239", // #80cdef - 上下文（淡蓝）
   PINK:    "38;2;209;131;232", // #d183e8 - 上下文（同 thinkingXhigh）
   SLATE:   "38;2;147;163;184", // #93a3b8 灰蓝（偏灰偏淡）- API 速度
+  TOKEN:   "38;2;132;195;225", // #84c3e1 介于 SAPPHIRE 与 SLATE 之间、偏蓝 - token 统计
   SYMBOL: "38;2;249;226;175", // #f9e2af - π 符号（暖黄）
   DIM:     "38;2;110;115;125", // dim 灰
   WHITE:   "38;2;200;200;200", // 浅白 - | 分隔符
@@ -59,6 +60,7 @@ export default function (pi: ExtensionAPI) {
           // ── 累计 token ──
           let totalInput = 0, totalOutput = 0, totalCost = 0;
           let totalCacheRead = 0, totalCacheWrite = 0;
+          let latestCacheHitRate: number | undefined;
           try {
             for (const entry of ctx.sessionManager.getEntries()) {
               if (entry.type === "message" && entry.message.role === "assistant") {
@@ -68,6 +70,11 @@ export default function (pi: ExtensionAPI) {
                 totalCacheRead += u.cacheRead;
                 totalCacheWrite += u.cacheWrite;
                 totalCost += u.cost.total;
+                // 最近一次请求的缓存命中率：cacheRead / (input + cacheRead + cacheWrite)
+                const promptTokens = u.input + u.cacheRead + u.cacheWrite;
+                if (promptTokens > 0) {
+                  latestCacheHitRate = (u.cacheRead / promptTokens) * 100;
+                }
               }
             }
           } catch { /* ignore */ }
@@ -111,7 +118,7 @@ export default function (pi: ExtensionAPI) {
           const timeStr = cat(C.GREEN, `${yy}-${MM}-${dd} ${hh}:${mm}`);
 
           // ── Token ──
-          const tokenStr = cat(C.SAPPHIRE,
+          const tokenStr = cat(C.TOKEN,
             [totalInput ? `↑${fmtTokens(totalInput)}` : "",
              totalOutput ? `↓${fmtTokens(totalOutput)}` : "",
              totalCacheRead ? `R${fmtTokens(totalCacheRead)}` : "",
@@ -124,23 +131,24 @@ export default function (pi: ExtensionAPI) {
           try {
             const statuses = footerData.getExtensionStatuses?.();
             const speed = statuses?.get("api-speed");
-            if (speed) speedStr = cat(C.SLATE, ` ${sanitize(speed)}`);
+            if (speed) speedStr = cat(C.SLATE, sanitize(speed));
           } catch { /* ignore */ }
 
-          // ── 第 1 行：模型 + 目录（左） | 速度 + mode（右） ──
+          // ── 缓存命中率（最近一次请求，一次性指标，第二行右下角） ──
+          let hitRateStr = "";
+          if (latestCacheHitRate !== undefined) {
+            hitRateStr = cat(C.SLATE, `CH${latestCacheHitRate.toFixed(1)}%`);
+          }
+
+          // ── 第 1 行：模型 + 目录（左） | 速度（右） ──
           const line1Left = `${cat(C.SYMBOL, "π")} ${modelStr} in ${dirStr}`;
 
-          // mode（靠右，session name 已移至输入框上方 header）
-          let rightExtra = "";
-          try {
-            const mode = ctx.mode;
-            if (mode) rightExtra = cat(C.DIM, mode);
-          } catch { /* ignore */ }
+          // 右侧：API 速度
+          const rightParts: string[] = [];
+          if (speedStr) rightParts.push(speedStr);
 
-          // 速度 + mode 组合（速度在左，mode 在最右）
-          if (speedStr) rightExtra = rightExtra ? `${speedStr} ${rightExtra}` : speedStr;
-
-          if (rightExtra) {
+          if (rightParts.length > 0) {
+            const rightExtra = rightParts.join(" ");
             const pad = " ".repeat(Math.max(1, width - visibleWidth(line1Left) - visibleWidth(rightExtra)));
             lines.push(truncateToWidth(line1Left + pad + rightExtra, width));
           } else {
@@ -176,7 +184,7 @@ export default function (pi: ExtensionAPI) {
             // 其他扩展状态
             if (statuses?.size > 0) {
               const others = Array.from(statuses.entries())
-                .filter(([k]) => k !== "pm" && k !== "api-speed") // api-speed 已显示在 header
+                .filter(([k]) => k !== "pm" && k !== "api-speed") // api-speed 已显示在第 1 行右侧
                 .sort(([a], [b]) => a.localeCompare(b))
                 .map(([, text]) => sanitize(text));
               if (others.length > 0) {
@@ -185,7 +193,13 @@ export default function (pi: ExtensionAPI) {
             }
 
             if (secondLineParts.length > 0) {
-              lines.push(truncateToWidth(secondLineParts.join("  "), width, cat(C.DIM, "...")));
+              const leftStr = secondLineParts.join("  ");
+              if (hitRateStr) {
+                const pad = " ".repeat(Math.max(1, width - visibleWidth(leftStr) - visibleWidth(hitRateStr)));
+                lines.push(truncateToWidth(leftStr + pad + hitRateStr, width, cat(C.DIM, "...")));
+              } else {
+                lines.push(truncateToWidth(leftStr, width, cat(C.DIM, "...")));
+              }
             }
           } catch { /* ignore */ }
 

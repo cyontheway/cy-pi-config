@@ -25,7 +25,7 @@ cp -r skills/cross-session-msg ~/.pi/agent/skills/
 |------|-------------|
 | `permission-gate.ts` | Permission gate: three-level interception (allow/ask/deny), mode switching (normal/yolo/plan), protected-file blocking. |
 | `pi-header.ts` | Pixel-art Pi logo header with version/dir/model/session info bar (v2 green, designed for the dark-purple theme). |
-| `status-footer.ts` | Catppuccin-styled status footer: model, directory, branch, time, token, context, permission mode. |
+| `status-footer.ts` | Catppuccin-styled status footer: model, directory, branch, time, token, context, permission mode, cache hit rate. |
 | `api-speed.ts` | Live API speed monitor (3s sliding window during streaming, average speed + elapsed time on completion). |
 | `obsidian-auto-open.ts` | Auto-open edited `.md` files in Obsidian (auto-detects the vault). |
 | `ask-user.ts` | Interactive user-choice dialog for AI tool calls (SelectList navigation + custom input fallback). |

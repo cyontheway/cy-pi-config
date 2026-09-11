@@ -1,13 +1,14 @@
 /**
  * Session Namer — 自动命名 session
- * 格式：YYMMDD <话题>（日期从 session 第一行提取）
+ * 格式：YYMMDD <名字>（日期从 session 第一行提取）
  *
- * AI 调用 name_session 时自己推断一个有意义的描述，不用用户说。
- * 不需要 morning 检测——AI 根据内容自行决定。
+ * 命名语义：session 名 = 整段 session 的定名（这一段时间做的固定事项），
+ * 不是当前话题名。一个 session 只在未命名时起一次名，此后冻结。
  *
- * 使用方式：
- *   - AI 调用 name_session tool，从对话内容推断有意义的话题描述
- *   - 不需用户参与
+ * 稳定性规则：
+ *   - 已有名称时 name_session 直接跳过（硬拦截），不覆盖
+ *   - 只有用户本轮消息明确要求改名，AI 才可传 force: true
+ *   - 用户手动 /name 或 --name 设的名字同样视为已有名，不被自动覆盖
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
@@ -60,24 +61,47 @@ export default function (pi: ExtensionAPI) {
     name: "name_session",
     label: "命名 Session",
     description:
-      `自动给当前 session 命名。格式 YYMMDD <名字>，日期前缀自动添加。` +
-      `AI 自己从对话内容推断一个有意义的描述作为话题（如"合同审查""标签标准化"）。`,
+      `给当前 session 起名（格式 YYMMDD <名字>，日期前缀自动添加）。` +
+      `session 名 = 整段 session 的定名（如"合同审查""标签标准化"）。` +
+      `已有名称时本工具直接跳过，不覆盖；仅当用户明确要求改名时才传 force: true。`,
     promptSnippet:
-      "给当前 session 命名。AI 自己从对话内容推断话题词，用户不参与。",
+      "给未命名的 session 起一个整段定名（仅限未命名时，用户不参与）；已有名字时不要调用。",
     promptGuidelines: [
-      `调用 name_session 前，先判断对话内容的主要话题，传一个简短有意义的描述（2-8字中文，如「合同审查」「标签标准化」「会话命名修复」）。`,
-      "话题描述要让人一眼看懂是什么——用中文，不要用文件名、skill名、代码产物名。",
+      "session 名 = 整段 session 的定名（这一段时间在做的那件事），不是当前话题名。话题漂移不改名。",
+      "只在当前 session 未命名时调用 name_session，一生只起一次；上下文没显示名字也不代表可以重命名，不确定就不动。",
+      "起名时传一个简短有意义的描述（2-8字中文，如「合同审查」「标签标准化」），一眼看懂是什么，不要用文件名/skill名/产品名。",
+      "force: true 仅当用户在本轮消息里明确说出「改 session 名字」「重命名」时才可传；自己觉得该改 ≠ 用户要改。",
     ],
     parameters: Type.Object({
       name: Type.Optional(
         Type.String({
           description:
-            "简短有意义的中文话题，2-8 字。例如：合同审查、标签标准化。不要文件名/skill名/产品名。不传则只显示日期。",
+            "简短有意义的中文描述，2-8 字。例如：合同审查、标签标准化。不要文件名/skill名/产品名。不传则只显示日期。",
+        }),
+      ),
+      force: Type.Optional(
+        Type.Boolean({
+          description:
+            "仅在用户明确要求修改 session 名称时传 true。默认 false：已有名称时不覆盖。",
         }),
       ),
     }),
 
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      // 硬拦截：已有名称时，除非用户明确要求（force），否则不覆盖
+      const existing = ctx.sessionManager?.getSessionName?.();
+      if (existing && !params.force) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Session 已有名称「${existing}」，按规则不覆盖。如确需改名，请在用户明确要求后传 force: true。`,
+            },
+          ],
+          details: { skipped: true, name: existing },
+        };
+      }
+
       const sessionFile = ctx.sessionManager?.getSessionFile();
       const datePrefix = sessionStartYYMMDD(sessionFile);
       const fullName = buildName(datePrefix, params.name);

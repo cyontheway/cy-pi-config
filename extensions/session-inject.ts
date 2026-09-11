@@ -1,7 +1,8 @@
 /**
- * Session Inject — 把当前 session 路径和模型信息注入 agent 上下文
+ * Session Inject — 把当前 session 路径、名称和模型信息注入 agent 上下文
  *
- * 让 agent 直接知道 session 文件路径 + 首次模型 + 当前模型，不用跑命令反查。
+ * 让 agent 直接知道 session 文件路径 + session 名称 + 首次模型 + 当前模型，不用跑命令反查。
+ * 注入名称的另一个作用：agent 每轮都能看到名字已定，避免误调 name_session 改名。
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -27,10 +28,16 @@ export default function (pi: ExtensionAPI) {
 
     const sessionPath = sessionFile.replace(process.env.HOME || "", "~");
 
+    // 当前 session 名称（有名字则提示已定名，不要主动改）
+    const sessionName = ctx.sessionManager.getSessionName();
+    const nameLine = sessionName
+      ? `当前 session 名称：${sessionName}（已定名，非用户明确要求不要改名）`
+      : "当前 session 名称：（未命名，可调用 name_session 起名，仅限一次）";
+
     return {
       systemPrompt:
         event.systemPrompt +
-        `\n\n当前 pi session：\`${sessionPath}\`\n运行模式：${ctx.mode}\n首次模型：${firstModel}\n当前模型：${currentModel}`,
+        `\n\n当前 pi session：\`${sessionPath}\`\n${nameLine}\n运行模式：${ctx.mode}\n首次模型：${firstModel}\n当前模型：${currentModel}`,
     };
   });
 }
